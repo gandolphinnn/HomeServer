@@ -1,6 +1,6 @@
 # Scelta della VPN per lo stack torrent
 
-*Creato: 4 agosto 2026 — STATO: decisione in sospeso (nessun acquisto fatto)*
+*Creato: 4 agosto 2026 — STATO: **DECISO (ProtonVPN Plus) e INSTALLATO la sera stessa** — gluetun operativo e collaudato, dettagli in [FASE4-DOWNLOAD.md](FASE4-DOWNLOAD.md) §4*
 
 Questo documento risponde a due domande, in ordine:
 1. **Serve davvero una VPN?** (risposta onesta, senza terrorismi da marketing)
@@ -142,22 +142,21 @@ Prezzi simili sui piani lunghi: **la differenza vera non è economica, è archit
 
 ### Percorso operativo (quando deciso)
 
-1. Account AirVPN → prova €2 (o direttamente €49/anno)
-2. Pannello AirVPN: generare chiavi WireGuard + riservare una porta statica
-3. `gluetun` nel compose `~/docker/arr` + qBittorrent dietro di lui → **FASE4-DOWNLOAD.md §4** (host download client da `qbittorrent` a `gluetun` in Sonarr, Radarr e Prowlarr)
-4. Verifiche §4.4-4.5 della guida: IP pubblico = IP VPN, kill switch, porta raggiungibile
-5. Porta statica nelle impostazioni di qBittorrent (Connection → listening port)
-6. Solo a quel punto: indexer veri in Prowlarr (⚖️ con buon senso su cosa scaricare)
+1. Account Proton → piano **VPN Plus** (⚠️ protonvpn.com risulta bloccato da alcune reti aziendali: farlo da casa o dal telefono)
+2. account.protonvpn.com → Downloads → **WireGuard configuration**: piattaforma GNU/Linux, **spunta NAT-PMP (Port Forwarding) attiva**, server **P2P** (es. Paesi Bassi) → copiare la `PrivateKey`
+3. `gluetun` nel compose `~/docker/arr` (provider `protonvpn`, `VPN_PORT_FORWARDING=on`, `PORT_FORWARD_ONLY=on`, comando automatico che aggiorna la listening port di qBittorrent) + qBittorrent dietro di lui → **FASE4-DOWNLOAD.md §4** (host download client da `qbittorrent` a `gluetun` in Sonarr, Radarr, Lidarr e Prowlarr)
+4. Verifiche §4.4-4.6 della guida: IP pubblico = IP VPN, kill switch, porta nel log di gluetun = listening port di qBittorrent (si riallinea da sola a ogni riconnessione)
+5. Solo a quel punto: indexer veri in Prowlarr (⚖️ con buon senso su cosa scaricare; fase 2: anche Prowlarr dietro gluetun)
 
 ---
 
 ## 6. Decisione
 
-- [ ] **AirVPN** (consigliata)
-- [ ] **ProtonVPN Plus**
-- [ ] Altro / rimandata
+- [ ] ~~AirVPN~~ (raccomandazione del confronto; scelta in un primo momento, poi cambiata in giornata)
+- [x] **ProtonVPN Plus** ✅ — decisione finale di Luca
+- [ ] ~~Altro / rimandata~~
 
-Data decisione: ____________
+Data decisione: **4 agosto 2026** — piano Plus (mensile $9,99, annuale ~$48, biennale ~$72; garanzia rimborso 30 giorni — la prova da €2 esiste solo su AirVPN). La porta dinamica è gestita in automatico da gluetun: `VPN_PORT_FORWARDING=on` + comando che riscrive la listening port di qBittorrent a ogni cambio (dettagli in FASE4-DOWNLOAD.md §4)
 
 ---
 

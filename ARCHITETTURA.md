@@ -36,6 +36,7 @@ flowchart TB
         immich["Immich :2283<br/>foto e video"]
         homarr["Homarr :7575<br/>dashboard"]
         portainer["Portainer :9443<br/>gestione container"]
+        dashdot["Dash. :3001<br/>metriche hardware"]
         subgraph arr["Stack download"]
             gluetun["gluetun · tunnel VPN"]
             qbit["qBittorrent :8080"]
@@ -68,8 +69,9 @@ flowchart TB
 
     homarr -.->|"API key"| jellyfin
     homarr -.->|"API key"| immich
+    homarr -.->|"metriche NUC"| dashdot
+    homarr -.->|"metriche NAS"| omv
     homarr -.->|"tile"| portainer
-    homarr -.->|"tile"| omv
 
     wd -.->|"WoL se il NAS è giù"| nas
     autoshut -.->|"ping: si spegne solo a NUC spento"| nuc
@@ -126,8 +128,13 @@ Web UI per l'amministrazione di Docker: mostra lo stato di tutti i container e p
 La pagina di partenza dell'homeserver: un'unica schermata con lo stato di tutti i servizi, da tenere come homepage del browser.
 
 - **Integrazioni via API key** con Jellyfin e Immich: Homarr interroga le loro API e mostra stato e statistiche in tempo reale (cosa è in riproduzione, quante foto caricate…).
+- **Widget Health Monitoring** (hardware di entrambe le macchine): per il **NUC** legge da Dash. (il container dashdot, vedi sotto); per il **NAS** usa l'integrazione OpenMediaVault con le credenziali della web UI — così il NAS resta senza applicativi installati.
 - **Tile manuali** per Portainer e per la web UI di OMV: semplici collegamenti, senza integrazione.
 - **Widget Docker**: legge `/var/run/docker.sock` montato **in sola lettura** per elencare i container e il loro stato — può guardare, non toccare (a differenza di Portainer).
+
+### Dash. (dashdot) — metriche hardware del NUC (`:3001`)
+
+Micro-container il cui unico scopo è esporre le statistiche dell'host (CPU, RAM, disco, rete) via web: è la fonte dati del widget Health Monitoring di Homarr per il NUC. Gira `privileged` con la radice del filesystem montata in sola lettura (`/:/mnt/host:ro`) — è il setup documentato per leggere le metriche della macchina da dentro un container. Ha anche una sua web UI su `:3001`. All'avvio esegue uno speedtest per il grafico di rete: il picco di CPU iniziale è normale.
 
 ### Stack download (`~/docker/arr`, compose unico)
 
@@ -230,6 +237,7 @@ Risultato: si accende e si spegne solo il NUC (o si lascia fare a `hs`), e il NA
 | Immich | http://192.168.1.171:2283 |
 | Portainer | https://192.168.1.171:9443 (avviso certificato: normale) |
 | Homarr | http://192.168.1.171:7575 |
+| Dash. (dashdot) | http://192.168.1.171:3001 |
 | qBittorrent | http://192.168.1.171:8080 |
 | Sonarr | http://192.168.1.171:8989 |
 | Radarr | http://192.168.1.171:7878 |

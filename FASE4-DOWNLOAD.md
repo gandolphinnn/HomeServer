@@ -1,6 +1,6 @@
 # Fase 4 — Gestione container e download automatizzati (Portainer, Homarr, stack *arr)
 
-> **STATO (4 ago 2026): BLOCCO A ✅ — BLOCCO B INSTALLATO E CABLATO (variante senza VPN) 🟡 — mancano: VPN+gluetun, indexer veri, collaudo import**
+> **STATO (4 ago 2026, sera): BLOCCO A ✅ — BLOCCO B ✅ COMPLETO DI VPN (gluetun + ProtonVPN Plus; qBittorrent **e** Prowlarr nel tunnel, tutto collaudato) — manca solo: aggiungere gli indexer veri (§4.8)**
 >
 > - **Portainer** attivo su https://192.168.1.171:9443 (compose in `~/docker/portainer`). Novità rispetto alla guida: le versioni recenti (2.43+) chiedono un *setup token* al primo avvio; dopo vari tentativi falliti si è usato il flag **`--no-setup-token`** (ok su LAN fidata) — già incorporato nel compose qui sotto. Resta la regola dei ~5 minuti per creare l'admin
 > - **Homarr** attivo su http://192.168.1.171:7575 (compose in `~/docker/homarr`, chiave di cifratura in `.env`). Wizard fatto: Base URL `192.168.1.171` in modalità Host:Port, integrazioni Jellyfin + Immich via API key, tile per Portainer e OMV. Riavvio di prova superato: tutto verde
@@ -8,7 +8,7 @@
 > - **Blocco B (sessione 3-4/8/2026): stack installato e cablato nella variante SENZA VPN** — qBittorrent `:8080`, Prowlarr `:9696`, Sonarr `:8989`, **Radarr `:7878`** e **Jellyseerr `:5055`** (extra rispetto alla guida originale) in `~/docker/arr`. Tutti i collegamenti verificati via API (testall ok): Prowlarr→Sonarr/Radarr in fullSync; Sonarr/Radarr→qBittorrent con **API key di qBittorrent** (novità 5.1+, alternativa pulita a user+pass); Jellyseerr→Jellyfin/Sonarr/Radarr; Connect Sonarr/Radarr→Jellyfin con Update Library (indispensabile qui: inotify non funziona su CIFS)
 > - **Test hardlink su CIFS: OK** (sorpresa positiva → import istantanei, niente doppio spazio). **Test download diretto: OK** (ISO Debian 755 MB arrivata sul NAS). **Collaudo catena Sonarr: in sospeso** — archive.org giù (timeout/429) e comunque la ricerca automatica `S01E01` non si sposa col naming caotico di IA: quando torna su → ricerca manuale in Prowlarr + Manual Import in Sonarr. In coda da Jellyseerr→Radarr: "Night of the Living Dead" (1968, pubblico dominio)
 > - **Librerie Jellyfin create**: Film `/media/film`, Serie `/media/serie`, Musica `/media/musica` (Musica già popolata dagli MP3 esistenti). Restano: widget con integrazioni in Homarr (§8), riavvio di prova con lo stack completo (§9)
-> - **Prossimo: abbonamento VPN** (AirVPN o ProtonVPN) → gluetun davanti a qBittorrent (§4) → indexer veri. ⚠️ IP del NUC aggiornato in tutta la guida: `192.168.1.171` (ethernet dall'1/8, il vecchio `.192` non esiste più)
+> - **VPN FATTA (4/8 sera)**: gluetun + ProtonVPN operativi e collaudati (IP Proton BE/NL, kill switch, porta dinamica auto-sincronizzata, connectable ✅) + **fase 2 fatta**: anche Prowlarr nel tunnel (§4.7, con la trappola del DNS documentata). **Prossimo: indexer veri (§4.8).** ⚠️ IP del NUC aggiornato in tutta la guida: `192.168.1.171` (ethernet dall'1/8, il vecchio `.192` non esiste più)
 > - **Lidarr (musica) installato e verificato il 4/8** (§10): porta 8686, root `/data/musica` ok, qBittorrent e Connect→Jellyfin validi via API. Unico pezzo mancante: l'indexer IA — Prowlarr lo teneva in backoff per i timeout di archive.org del mattino; resync automatico programmato per le 12:36
 >
 > Ispirata al video [Automated Home Media Server Setup](https://www.youtube.com/watch?v=3Q7UGg8LRJA) (vedi [analisi](analisi-video-automated-home-media-server.md)), adattata al nostro setup: NUC `glnuc` (Debian + Docker, `192.168.1.171`), media su `/srv/media` (= share SMB del NAS dopo la Fase 3), utente `luca` uid/gid 1000.
@@ -34,7 +34,8 @@ Obiettivo, in due blocchi indipendenti:
 | Immich | 2283 | già attivo |
 | Portainer | **9443** | HTTPS (avviso certificato: normale) |
 | Homarr | **7575** | |
-| qBittorrent | **8080** | per ora esposta diretta (variante senza VPN); con gluetun passerà da lì |
+| qBittorrent | **8080** | pubblicata da **gluetun** (dal 4/8): stesso indirizzo di sempre, ma il traffico torrent esce solo dalla VPN |
+| Prowlarr | **9696** | pubblicata da **gluetun** (dal 4/8 sera, fase 2): stesso indirizzo, ricerche solo dalla VPN. ⚠️ le app lo raggiungono a `http://gluetun:9696`, non più `http://prowlarr:9696` |
 | Sonarr | **8989** | |
 | Radarr | **7878** | |
 | Prowlarr | **9696** | |
@@ -139,14 +140,16 @@ I container dello stack vedranno **tutto `/srv/media` come `/data`**: download e
 
 Un unico compose: i servizi si parlano per nome sulla rete interna di Docker. qBittorrent **non ha una rete propria**: usa quella di gluetun, quindi se la VPN cade il torrent si ferma (kill switch automatico).
 
-> ✅ **Stato reale (3/8/2026)**: lo stack è stato avviato nella **variante senza VPN** (debug a strati: prima la catena, poi gluetun davanti) e con due servizi in più: **radarr** e **jellyseerr** (compose effettivo in `~/docker/arr/docker-compose.yml`). Il compose qui sotto resta il riferimento per quando si aggiunge gluetun: a quel punto qBittorrent torna a `network_mode: "service:gluetun"`, la porta 8080 si sposta su gluetun e in Sonarr/Radarr l'host del download client va cambiato da `qbittorrent` a `gluetun`.
+> ✅ **Stato reale (4/8/2026 sera)**: gluetun è **installato e collaudato** (ProtonVPN Plus, WireGuard). Percorso: stack avviato il 3/8 senza VPN (debug a strati) → il 4/8 aggiunto gluetun col compose qui sotto e host del download client cambiato in `gluetun` **via API** in Sonarr, Radarr, Lidarr e Prowlarr (testall ✅ su tutti e quattro). Backup pre-modifica: `docker-compose.yml.bak-pre-gluetun`.
+> ⚠️ **Nota operativa**: se gluetun viene riavviato da solo (`docker stop/start gluetun`), i container che condividono la sua rete vanno riavviati dopo — dal 4/8 sono **due**: `docker restart qbittorrent prowlarr` (verificato sul campo). `docker compose up -d` invece gestisce l'ordine da solo (dipendenza con healthcheck).
+> 💡 **Conseguenza di design (voluta)**: con Prowlarr nella rete della VPN, se il tunnel cade **anche le ricerche si fermano** — nessuna query verso gli indexer può uscire con l'IP di casa. Sonarr/Radarr/Lidarr/Jellyseerr restano invece raggiungibili come sempre (sono fuori dal tunnel): si continua a navigare nelle UI, semplicemente le ricerche danno errore finché la VPN non torna.
 
 1. [x] ```bash
    mkdir -p ~/docker/arr/{gluetun,qbittorrent,prowlarr,sonarr,radarr}
    cd ~/docker/arr
    nano docker-compose.yml
    ```
-2. [ ] Contenuto — la sezione `environment` di gluetun **dipende dal provider VPN**: valori esatti nella wiki di gluetun (https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers). Esempio per **ProtonVPN con WireGuard** (la chiave privata si genera dal pannello Proton → Downloads → WireGuard configuration):
+2. [x] Contenuto — la sezione `environment` di gluetun **dipende dal provider VPN**: valori esatti nella wiki di gluetun (https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers). **Provider scelto il 4/8/2026: ProtonVPN Plus** (analisi e cambio di decisione in [SCELTA-VPN.md](SCELTA-VPN.md)). La `<PrivateKey>` si genera da account.protonvpn.com → Downloads → **WireGuard configuration** (piattaforma GNU/Linux, **spunta NAT-PMP/Port Forwarding ATTIVA** — la capacità di port forwarding è legata alla chiave generata — server P2P):
    ```yaml
    services:
      gluetun:
@@ -163,10 +166,17 @@ Un unico compose: i servizi si parlano per nome sulla rete interna di Docker. qB
          - ./gluetun:/gluetun
        environment:
          - TZ=Europe/Rome
-         - VPN_SERVICE_PROVIDER=protonvpn      # ← adatta al tuo provider
+         - VPN_SERVICE_PROVIDER=protonvpn
          - VPN_TYPE=wireguard
-         - WIREGUARD_PRIVATE_KEY=<CHIAVE_WIREGUARD>
+         - WIREGUARD_PRIVATE_KEY=<PrivateKey, sezione [Interface] del config Proton>
+         - WIREGUARD_ADDRESSES=10.2.0.2/32     # fisso, uguale per tutti i config WireGuard di Proton
          - SERVER_COUNTRIES=Netherlands
+         - PORT_FORWARD_ONLY=on                # solo server che supportano il port forwarding
+         - VPN_PORT_FORWARDING=on              # gluetun negozia la porta NAT-PMP e la rinnova ogni 60 s
+         - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --retry-connrefused --post-data "json={\"listen_port\":{{PORTS}}}" http://127.0.0.1:8080/api/v2/app/setPreferences 2>&1'
+   ```
+   > ☝️ **L'ultima riga è il pezzo che rende indolore la porta dinamica di Proton**: a ogni porta nuova assegnata, gluetun stesso la scrive nelle impostazioni di qBittorrent via API. Funziona senza credenziali grazie alla spunta "Bypass authentication for clients on localhost" (già attiva da tempo): condividendo la rete, per qBittorrent le richieste di gluetun arrivano da localhost.
+   ```yaml
 
      qbittorrent:
        image: lscr.io/linuxserver/qbittorrent:latest
@@ -174,7 +184,8 @@ Un unico compose: i servizi si parlano per nome sulla rete interna di Docker. qB
        restart: unless-stopped
        network_mode: "service:gluetun"   # tutto il traffico passa dalla VPN
        depends_on:
-         - gluetun
+         gluetun:
+           condition: service_healthy    # parte solo a tunnel già su
        environment:
          - PUID=1000
          - PGID=1000
@@ -231,13 +242,19 @@ Un unico compose: i servizi si parlano per nome sulla rete interna di Docker. qB
    >       - "8080:8080"
    > ```
    > Per aggiungere la VPN dopo, basta ripristinare il compose qui sopra: la config di qBittorrent non si perde.
-3. [x] `docker compose up -d` (fatto il 3/8 nella variante senza VPN)
-4. [ ] **Verifica VPN** (quando ci sarà gluetun — fondamentale: l'IP mostrato deve essere quello della VPN, NON quello di casa):
+3. [x] `docker compose up -d` (fatto il 3/8 senza VPN; rifatto il 4/8 con gluetun — partito al primo colpo)
+4. [x] **Verifica VPN** ✅ 4/8: IP visto da qBittorrent = `45.128.133.230` (Proton, Belgio) e dopo un riavvio `185.107.44.111` (Paesi Bassi) — l'IP di casa è un altro. Comandi:
    ```bash
    docker logs gluetun | grep -i "public ip"
    docker exec qbittorrent curl -s ifconfig.me; echo
    ```
-5. [ ] Prova kill switch (quando ci sarà gluetun): `docker stop gluetun` → qBittorrent non deve più avere rete; poi `docker start gluetun`
+5. [x] Prova kill switch ✅ 4/8: con gluetun fermo, qBittorrent è risultato **completamente isolato** (nessun pacchetto fuori). Al restart di gluetun ricordare la nota operativa sopra (riavviare anche qBittorrent)
+6. [x] **Porta dinamica Proton in qBittorrent** ✅ collaudata il 4/8 su **due cicli**: porta `53438` alla prima connessione, `62709` dopo un riavvio — in entrambi i casi gluetun l'ha scritta da solo nelle impostazioni di qBittorrent (zero interventi umani), e il test TCP **dall'esterno del tunnel** dà porta APERTA → siamo *connectable*. Mai impostarla a mano; una tantum già a posto: UPnP off, porta random off, localhost-bypass attivo. Verifica al bisogno: `docker logs gluetun | grep -i "port forward"` vs Options → Connection → *Port used for incoming connections*
+7. [x] **Fase 2 ✅ FATTA il 4/8/2026 sera — anche Prowlarr dietro gluetun.** Motivo: le ricerche di Sonarr/Radarr/Lidarr passano fisicamente da Prowlarr (gli indexer sincronizzati nelle app sono URL che puntano a lui), quindi spostarlo dietro la VPN copre tutto il traffico di ricerca e rende raggiungibili gli indexer bloccati da AGCOM. Cambi applicati: in `prowlarr` `ports` sostituito da `network_mode: "service:gluetun"` + `depends_on` con healthcheck, `"9696:9696"` spostato nei `ports` di gluetun. Backup: `docker-compose.yml.bak-pre-prowlarr-vpn`.
+   - ✅ **Verificato**: Prowlarr esce con l'IP Proton (uguale a qBittorrent), risponde su `:9696` come prima, raggiunge ancora Sonarr/Radarr/Lidarr **per nome container** (la rete di gluetun risolve i nomi Docker: verificato con `getent hosts`), download client verde, **ricerca reale su LinuxTracker: 30 risultati** attraverso il tunnel.
+   - ⚠️ **Trappola importante (costata due tentativi)**: entrando nella netns di gluetun, Prowlarr **perde il proprio nome DNS** → gli indexer già sincronizzati nelle app, che puntavano a `http://prowlarr:9696/1/`, danno *"Name does not resolve (prowlarr:9696)"*. Vanno riscritti in **`http://gluetun:9696/1/`**. Due accorgimenti: (a) `prowlarrUrl` nelle 3 Applications di Prowlarr va messo a `http://gluetun:9696` (fatto), ma il sync **non riscrive** gli URL già esistenti nelle app, nemmeno con `forceSync` → si aggiornano a mano (UI: Sonarr/Radarr → Settings → Indexers → l'indexer → URL) oppure via API; (b) Sonarr/Radarr **rifiutano il salvataggio** se l'indexer non risponde (nel nostro caso `429` di archive.org) → serve `?forceSave=true` sull'API, o in UI insistere/riprovare quando l'indexer è sano.
+   - Nota: Homarr non ha richiesto modifiche (FQDN e porta invariati).
+8. [ ] **Indexer veri in Prowlarr** — ultimo passo del Blocco B (⚖️ contenuti legittimi). Ora l'intera catena ricerca+download esce dalla VPN, quindi si può procedere. Nota: gli indexer bloccati da AGCOM dovrebbero essere raggiungibili (traffico dal server Proton); dopo l'aggiunta, un `testall` in Prowlarr conferma.
 
 ## 5. Configurare qBittorrent
 
@@ -266,7 +283,7 @@ Per **Sonarr** (http://192.168.1.171:8989):
 1. [x] Al primo avvio: crea le credenziali
 2. [x] **Settings → Media Management → Add Root Folder**: `/data/serie`
 3. [x] **Settings → Download Clients → + → qBittorrent**: Host **`qbittorrent`** (configurazione attuale senza VPN), Port `8080`, **API key di qBittorrent** (o username/password della WebUI), Category `serie` → Test → Save
-   - ⚠️ quando arriverà gluetun l'host va cambiato in `gluetun` (qBittorrent condividerà la sua rete)
+   - ✅ fatto il 4/8: host cambiato in `gluetun` via API (qBittorrent condivide la sua rete), test verde
 4. [x] Verifica in Settings → Indexers che gli indexer arrivati da Prowlarr ci siano
 
 Per **Radarr** (http://192.168.1.171:7878): identico, con Root Folder `/data/film` e Category `film` — fatto ✅ (3/8, verificato via API).
@@ -336,7 +353,7 @@ docker ps --format '{{.Names}}\t{{.Status}}' | grep lidarr
 
 1. [x] Al primo avvio: Authentication **Forms** → crea le credenziali
 2. [x] **Settings → Media Management → Add Root Folder**: `/data/musica` (Quality/Metadata Profile: lasciare i default)
-3. [x] **Settings → Download Clients → + → qBittorrent**: Host `qbittorrent`, Port `8080`, **API key di qBittorrent** (Options → Web UI, la stessa usata per Sonarr/Radarr), Category `musica` → Test → Save — ⚠️ quando arriverà gluetun l'host andrà cambiato in `gluetun` (come per Sonarr/Radarr)
+3. [x] **Settings → Download Clients → + → qBittorrent**: Host `qbittorrent`, Port `8080`, **API key di qBittorrent** (Options → Web UI, la stessa usata per Sonarr/Radarr), Category `musica` → Test → Save — ✅ host cambiato in `gluetun` via API il 4/8 (come per Sonarr/Radarr), test verde
 4. [x] In **Prowlarr → Settings → Apps → + → Lidarr**: Prowlarr Server `http://prowlarr:9696`, Lidarr Server `http://lidarr:8686`, API key di Lidarr (Settings → General) → Test → Save. Si sincronizza Internet Archive (ha categorie audio); LinuxTracker resta fuori, come per TV/film
 5. [x] **Settings → Connect → + → Emby/Jellyfin**: Host `192.168.1.171`, Port `8096`, API key di Jellyfin, **Update Library ✓** (solito motivo: inotify non funziona su CIFS)
 6. [ ] **Homarr**: tile con `http://glnuc.uaru-snares.ts.net:8686` (+ eventuale integrazione Lidarr per i widget, vedi §8)
